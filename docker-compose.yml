@@ -1,0 +1,66 @@
+version: "3.9"
+
+services:
+  api:
+    build: ./backend
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000
+    ports:
+      - "8000:8000"
+    env_file: ./backend/.env
+    depends_on:
+      - redis
+      - postgres
+      - milvus
+    restart: unless-stopped
+
+  worker:
+    build: ./backend
+    command: >
+      celery -A app.tasks.celery_app worker
+      --loglevel=info
+      --concurrency=20
+      --queues=ecom_workflow,dead_letter
+    env_file: ./backend/.env
+    depends_on:
+      - redis
+      - postgres
+      - milvus
+    restart: unless-stopped
+    deploy:
+      replicas: 2
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    restart: unless-stopped
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ecom
+      POSTGRES_PASSWORD: ecom_password
+      POSTGRES_DB: ecom_workflow
+    ports:
+      - "5432:5432"
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+    restart: unless-stopped
+
+  milvus:
+    image: milvusdb/milvus:v2.4-latest
+    ports:
+      - "19530:19530"
+    volumes:
+      - milvus_data:/var/lib/milvus
+    environment:
+      ETCD_USE_EMBED: "true"
+      COMMON_STORAGETYPE: local
+    restart: unless-stopped
+
+volumes:
+  redis_data:
+  pg_data:
+  milvus_data:
